@@ -9,7 +9,7 @@ import graph
 import atexit
 from astar import Astar
 
-droneDB_path = './droneDB' # this is a pickled dictionary saved to disk
+droneDB_path = './droneDB.db' # this is a pickled dictionary saved to disk
 if os.path.exists(droneDB_path):
     droneDB = pickle.load(open(droneDB_path, 'r'))
 else:

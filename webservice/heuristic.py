@@ -1,6 +1,7 @@
 __author__ = 'mihir'
 
-from graphinit import Graph, GPS
+from graph import Graph
+from gps import GPS
 
 
 node_pair_cost_map = {}
