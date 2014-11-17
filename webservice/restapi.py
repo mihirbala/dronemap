@@ -66,6 +66,7 @@ def create_drone(drone):
     else:
         range_in_miles = int(body['range'])
         lat,lng = body['location']
+        lat, lng = float(lat), float(lng)
         if drone in droneDB and droneDB[drone]['range'] == range_in_miles:
             G = droneDB[drone]['graph']
         else:
@@ -74,9 +75,10 @@ def create_drone(drone):
         droneDB[drone] = {
             'name' : drone,
             'range' : range_in_miles,
-            'start_location' : gps.get_gps(lat, lng),
-            'graph' : G
+            'graph' : G,
+            'start_location' : G.get_approx_node(lat, lng)
         }
+
         # save droneDB back to its pickled file
         pickle.dump(droneDB, open(droneDB_path, 'wb'))
 
@@ -92,26 +94,34 @@ def create_drone(drone):
 
 @app.route('/drones/<drone>', methods=['GET'])
 def get_drone_info(drone):
-    loc = droneDB[drone]['start_location']
-    response = {
-        'name' : droneDB[drone]['name'],
-        'range' : droneDB[drone]['range'],
-        'start_location' : [loc.lat, loc.lng, loc.ele]
-    }
-    args = flask.request.args
-    if 'action' in args:
-        if args['action'] == 'route':
-            lat,lng = args['target'].split(',')
-            if lat < droneDB[drone]['graph'].lat_limit and lng < droneDB[drone]['graph'].lng_limit:
-                target_location = gps.get_gps(float(droneDB[drone]['graph'].get_approx_lat(lat)), float(droneDB[drone]['graph'].get_approx_lng(lng)))
-                route = Astar(droneDB[drone]['start_location'], target_location, droneDB[drone]['graph'])
-                response['route'] = jsonify_route(route)
-            else:
-                error = {'Error' : 'Lat and Lng coordinates not in drone range.'}
-                response = flask.jsonify(error)
+    if drone in droneDB:
+        loc = droneDB[drone]['start_location']
+        response = {
+            'name' : droneDB[drone]['name'],
+            'range' : droneDB[drone]['range'],
+            'start_location' : [loc.lat, loc.lng, loc.ele]
+        }
+        print droneDB[drone]['graph'].lat_lower_limit, droneDB[drone]['graph'].lat_upper_limit, droneDB[drone]['graph'].lng_lower_limit, droneDB[drone]['graph'].lng_upper_limit
+        args = flask.request.args
+        if 'action' in args:
+            if args['action'] == 'route':
+                lat,lng = args['target'].split(',')
+                lat, lng = float(lat), float(lng)
+                if lat <= droneDB[drone]['graph'].lat_upper_limit and lat >= droneDB[drone]['graph'].lat_lower_limit \
+                        and lng <= droneDB[drone]['graph'].lng_upper_limit and lng >= droneDB[drone]['graph'].lng_lower_limit:
+                    target_location = droneDB[drone]['graph'].get_approx_node(lat, lng)
+                    droneDB[drone]['graph'].print_node(target_location)
+                    route = Astar(droneDB[drone]['start_location'], target_location, droneDB[drone]['graph'])
+                    response['route'] = jsonify_route(route)
+                else:
+                    error = {'Error' : 'Lat and Lng coordinates not in drone range.'}
+                    response = flask.jsonify(error)
+        else:
+            # print out graph
+            response['graph'] = jsonify_graph(droneDB[drone]['graph'])
     else:
-        # print out graph
-        response['graph'] = jsonify_graph(droneDB[drone]['graph'])
+        error = {'Error' : 'Drone does not exist.'}
+        response = flask.jsonify(error)
 
     return flask.jsonify(response)
 

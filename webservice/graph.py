@@ -66,31 +66,38 @@ class Graph:
         self.RESOLUTION = 69.2
         self.gps_increment = gps_increment
         self.grid = []
+        self.lat_origin = lat_origin
+        self.lng_origin = lng_origin
 
-        self.lat_limit = lat_origin + (range_in_miles/self.RESOLUTION)
+
+        self.lat_upper_limit = self.lat_origin + (range_in_miles/self.RESOLUTION)
         #TODO change lng_range conversion to be dependent on latitude
-        self.lng_limit = lng_origin + (range_in_miles/self.RESOLUTION)
+        self.lng_upper_limit = self.lng_origin + (range_in_miles/self.RESOLUTION)
         # start lat and lng at bottom left corner of grid
-        lat, lng = lat_origin - (range_in_miles/self.RESOLUTION), lng_origin - (range_in_miles/self.RESOLUTION)
+        self.lat_lower_limit, self.lng_lower_limit = self.lat_origin - (range_in_miles/self.RESOLUTION), self.lng_origin - (range_in_miles/self.RESOLUTION)
+
+        #TODO: change lat and lng to lat origin and lng origin
 
         # add all nodes
-        i = 0
-        while lat < self.lat_limit:
+        i,j = 0,0
+        while self.lat_lower_limit < self.lat_upper_limit:
             self.grid.append([])
-            lng = lng_origin
-            while lng < self.lng_limit:
-                node = gps.get_gps(lat, lng)
+            self.lng_lower_limit = self.lng_origin - (range_in_miles/self.RESOLUTION)
+            while self.lng_lower_limit < self.lng_upper_limit:
+                node = gps.get_gps(self.lat_lower_limit, self.lng_lower_limit)
                 self.add_node(node)
                 self.grid[i].append(node)
-                lng += gps_increment
-            lat += gps_increment
+                self.lng_lower_limit += self.gps_increment
+                j += 1
+            self.lat_lower_limit += self.gps_increment
             i += 1
 
         ROWS, COLUMNS = len(self.grid), len(self.grid[0])
+        self.rows, self.columns = ROWS, COLUMNS
         print ROWS, COLUMNS
 
         # add all edges
-        lat, lng = lat_origin - (range_in_miles/self.RESOLUTION), lng_origin - (range_in_miles/self.RESOLUTION)
+        self.lat_lower_limit, self.lng_lower_limit = self.lat_origin - (range_in_miles/self.RESOLUTION), self.lng_origin - (range_in_miles/self.RESOLUTION)
         for i in range(ROWS):
             for j in range(COLUMNS):
                 if j > 0:  # has a left neighbor
@@ -125,30 +132,6 @@ class Graph:
     def get_edges(self):
         return self.edges
 
-    def get_approx_lat(self, lat):
-        # lat
-        for i,node in enumerate(self.grid):
-            if node.lat < lat:
-                pass
-            else:
-                if node.lat-lat > lat-self.grid[i-1][0].lat:
-                    lat = self.grid[i-1][0].lat
-                else:
-                    lat = node.lat
-        return lat
-
-    def get_approx_lng(self, lng):
-        # lng
-        for i,node in enumerate(self.grid[0]):
-            if node.lng < lng:
-                pass
-            else:
-                if node.lng-lng > lng-self.grid[0][i-1].lng:
-                    lng = self.grid[0][i-1].lng
-                else:
-                    lng = node.lng
-        return lng
-
     def add_edge(self, source, target):
         edge = {
             'source' : source,
@@ -159,6 +142,26 @@ class Graph:
             self.node_edge_map[source].append(edge)
         else:
             self.node_edge_map[source] = [edge]
+
+    def get_approx_node(self, lat, lng):
+        x, y = None, None
+        for i in range(self.rows - 1):
+            if lat >= self.grid[i][0].lat and lat <= self.grid[i+1][0].lat:
+                if lat - self.grid[i][0].lat > self.grid[i+1][0].lat - lat:
+                    x = i + 1
+                else:
+                    x = i
+                break
+        for j in range(self.columns - 1):
+            if lng >= self.grid[x][j].lng and lng <= self.grid[x][j+1].lng:
+                if lng - self.grid[x][j].lng > self.grid[x][j+1].lng - lng:
+                    y = j + 1
+                else:
+                    y = j
+                print 'approx grid coordinate for ({0}, {1}) = {2}, {3}'.format(lat, lng, x, y)
+                return self.grid[x][y]
+        print 'ERROR approx grid coordinate not found!'
+        return None
 
     def neighbor(self, source):
         neighbor_list = []

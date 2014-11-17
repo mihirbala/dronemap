@@ -56,7 +56,9 @@ def reconstruct_path(came_from, goal):
     if goal in came_from[goal]:
         return came_from[goal]
     else:
-        return came_from[goal]
+        lst = came_from[goal]
+        lst.append(goal)
+        return lst
    
 
 def g_score_comp(node, came_from):
