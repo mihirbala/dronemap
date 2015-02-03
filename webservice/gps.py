@@ -1,11 +1,12 @@
-
 from google.appengine.api import urlfetch
 from collections import namedtuple
 import json
 import logging
 
 GPS = namedtuple("GPS", ['lat', 'lng', 'ele'])
-API_KEY = "AIzaSyBqTRpHolOOb5d5yC-gfnSY2zHhE1X4caA"
+K1 = "AIzaSyBqTRpHolOOb5d5yC"
+K2 = "gfnSY2zHhE1X4caA"
+API_KEY = K1 + "-" + K2
 URL = "https://maps.googleapis.com/maps/api/elevation/json?key=" + API_KEY + "&locations="
 MAX_URL_LEN = 2000
 
