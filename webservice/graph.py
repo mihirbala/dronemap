@@ -1,58 +1,10 @@
-__author__ = "mihir"
-
+import logging
 import math
 import gps
 
 class Graph:
     
-    def dummy(self, upper_right, lower_left, resolution=1):
-        """
-        :type upper_right: tuple
-        :type lower_left: tuple
-        :type resolution: int
-        :return:
-        """
-        self.nodes = set()
-        self.edges = []
-        self.node_edge_map = {}
-
-        ROWS = int(math.floor((upper_right[0] - lower_left[0])/resolution))
-        COLUMNS = int(math.floor((upper_right[1] - lower_left[1])/resolution))
-
-        grid = [[None for i in range(COLUMNS)] for j in range(ROWS)]
-        # fill in the grid
-
-        for i in range(ROWS):
-            for j in range(COLUMNS):
-                lat = lower_left[0] + resolution*i
-                lng = lower_left[1] + resolution*j
-                grid[i][j] = gps.get_gps(lat, lng)
-
-        for i in range(ROWS):
-            for node in grid[i]:
-                self.add_node(node)
-
-        for i in range(ROWS):
-            for j in range(COLUMNS):
-                if j > 0:  # has a left neighbor
-                    self.add_edge(grid[i][j], grid[i][j - 1])
-                if j < COLUMNS - 1:  # has right neighbor
-                    self.add_edge(grid[i][j], grid[i][j + 1])
-                if i > 0:  # has top neighbor
-                    self.add_edge(grid[i][j], grid[i - 1][j])
-                if i < ROWS - 1:  # has bottom neighbor
-                    self.add_edge(grid[i][j], grid[i + 1][j])
-                if j > 0 and i > 0:  # has top left neighbor
-                    self.add_edge(grid[i][j], grid[i - 1][j - 1])
-                if j < COLUMNS - 1 and i > 0:  # has top right neighbor
-                    self.add_edge(grid[i][j], grid[i - 1][j + 1])
-                if j > 0 and i < ROWS - 1:  # has bottom left neighbor
-                    self.add_edge(grid[i][j], grid[i + 1][j - 1])
-                if j < COLUMNS - 1 and i < ROWS - 1:  # has bottom right neighbor
-                    self.add_edge(grid[i][j], grid[i + 1][j + 1])
-
-
-    def __init__(self, lat_origin, lng_origin, range_in_miles, gps_increment=0.2):
+    def __init__(self, lat_origin, lng_origin, range_in_miles, gps_increment=0.01):
         """
         :type lat_origin: float
         :type lng_origin: float
@@ -71,30 +23,36 @@ class Graph:
 
 
         self.lat_upper_limit = self.lat_origin + (range_in_miles/self.RESOLUTION)
-        #TODO change lng_range conversion to be dependent on latitude
+        #TODO: change lng_range conversion to be dependent on latitude
         self.lng_upper_limit = self.lng_origin + (range_in_miles/self.RESOLUTION)
         # start lat and lng at bottom left corner of grid
-        self.lat_lower_limit, self.lng_lower_limit = self.lat_origin - (range_in_miles/self.RESOLUTION), self.lng_origin - (range_in_miles/self.RESOLUTION)
+        self.lat_lower_limit = self.lat_origin - (range_in_miles/self.RESOLUTION)
+        self.lng_lower_limit = self.lng_origin - (range_in_miles/self.RESOLUTION)
 
         #TODO: change lat and lng to lat origin and lng origin
 
         # add all nodes
         i,j = 0,0
-        while self.lat_lower_limit < self.lat_upper_limit:
+        lat= self.lat_lower_limit
+        while lat < self.lat_upper_limit:
             self.grid.append([])
-            self.lng_lower_limit = self.lng_origin - (range_in_miles/self.RESOLUTION)
-            while self.lng_lower_limit < self.lng_upper_limit:
-                node = gps.get_gps(self.lat_lower_limit, self.lng_lower_limit)
-                self.add_node(node)
+            lng = self.lng_lower_limit
+            while lng < self.lng_upper_limit:
+                node = (lat, lng)
                 self.grid[i].append(node)
-                self.lng_lower_limit += self.gps_increment
+                lng += self.gps_increment
                 j += 1
-            self.lat_lower_limit += self.gps_increment
+            # call get_gps on an entire row so we optimize use of the Elevation API
+            self.grid[i] = gps.get_gps(self.grid[i])
+            for node in self.grid[i]:
+                self.add_node(node)
+            lat += self.gps_increment
             i += 1
 
+        
         ROWS, COLUMNS = len(self.grid), len(self.grid[0])
         self.rows, self.columns = ROWS, COLUMNS
-        print ROWS, COLUMNS
+        logging.debug('Rows = {0}, Columns = {1}'.format(ROWS, COLUMNS))
 
         # add all edges
         self.lat_lower_limit, self.lng_lower_limit = self.lat_origin - (range_in_miles/self.RESOLUTION), self.lng_origin - (range_in_miles/self.RESOLUTION)
@@ -120,10 +78,14 @@ class Graph:
 
 
     def print_node(self, node):
-        print "lat={0}, lng={1}, ele={2}".format(node.lat, node.lng, node.ele)
+        logging.debug('[{0}, {1}, {2}]'.format(node.lat, node.lng, node.ele))
+
+    def get_location(self, node):
+        ''' return this node as a [lat, lng, ele] tuple '''
+        return [node.lat, node.lng, node.ele]
             
     def add_node(self, node):
-        self.print_node(node)
+        # self.print_node(node)
         self.nodes.add(node)
 
     def get_nodes(self):
@@ -158,9 +120,10 @@ class Graph:
                     y = j + 1
                 else:
                     y = j
-                print 'approx grid coordinate for ({0}, {1}) = {2}, {3}'.format(lat, lng, x, y)
+                logging.debug('approx grid coordinate for ({0}, {1}) = {2}, {3}'.format(lat, lng, x, y))
                 return self.grid[x][y]
-        print 'ERROR approx grid coordinate not found!'
+        logging.error('ERROR approx grid coordinate not found!')
+        abort(500)
         return None
 
     def neighbor(self, source):

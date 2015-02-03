@@ -1,24 +1,33 @@
-__author__ = 'mihir'
-
 import os
-import flask
-from flask import request, json
-import pickle
-import gps
+import urllib
+
 import graph
-import atexit
+
+from google.appengine.api import users
+
+import logging
+import webapp2
+import json
+import datetime
+
+import ndbutils
+
 from astar import Astar
 
-droneDB_path = './droneDB.db' # this is a pickled dictionary saved to disk
-if os.path.exists(droneDB_path):
-    droneDB = pickle.load(open(droneDB_path, 'r'))
-else:
-    droneDB = {}
+def handle_404(request, response, exception):
+    logging.exception(exception)
+    response.write('Page not found.')
+    response.set_status(404)
 
-app = flask.Flask(__name__)
+def handle_400(request, response, exception):
+    logging.exception(exception)
+    response.write('Incorrect parameters.')
+    response.set_status(400)
 
-def clean_up():
-    pass
+def handle_500(request, response, exception):
+    logging.exception(exception)
+    response.write('A server error occurred!')
+    response.set_status(500)
 
 def compute_graph(lat, lng, range_in_miles):
     """
@@ -27,8 +36,20 @@ def compute_graph(lat, lng, range_in_miles):
     :type range_in_miles: float
     :return: GPS
     """
-    G = graph.Graph(lat, lng, range_in_miles)
-    return G
+    drone_graph = graph.Graph(lat, lng, range_in_miles)
+    return drone_graph
+
+def jsonify_graph(drone_graph):
+    """
+    :type drone_graph: graph.Graph
+    :return:
+    """
+    node_list = []
+    for i, lst in enumerate(drone_graph.get_nodes()):
+        node_list.append([])
+        for node in lst:
+            node_list[i].append(drone_graph.get_location(node))
+    return node_list
 
 def jsonify_route(route):
     loc_list = []
@@ -37,95 +58,116 @@ def jsonify_route(route):
         loc_list.append(new_loc)
     return loc_list
 
-def jsonify_graph(G):
-    """
-    :type G: graph.Graph
-    :return:
-    """
-    node_list = []
-    for i,lst in enumerate(G.get_nodes()):
-        node_list.append([])
-        for node in lst:
-            # app.logger.info(G.print_node(node))
-            node_list[i].append([node.lat, node.lng, node.ele])
-    return node_list
+class MainPage(webapp2.RequestHandler):
+    
+    def get(self):
+        self.response.write("Welcome to Drone Map")
 
-@app.route('/')
-def api_help():
-    return "PUT /drones/(name) - creates a new drone, or modifies an existing one\n" \
-    + "  body is a JSON with required keys: 'range' (drone range in miles)\n" \
-    + "  'location' (starting location as a lat, lng list)\n\n "\
-    + "  GET /drones/(name)/route?dest=lat,lng - returns a route from the start location to the destination"
+class CreateDrone(webapp2.RequestHandler):
 
-@app.route('/drones/<drone>', methods=['PUT'])
-def create_drone(drone):
-    body = json.loads(request.data)
-    if 'range' not in body or 'location' not in body:
-        return api_help()
+    def put(self):
 
-    else:
-        range_in_miles = int(body['range'])
-        lat,lng = body['location']
-        lat, lng = float(lat), float(lng)
-        if drone in droneDB and droneDB[drone]['range'] == range_in_miles:
-            G = droneDB[drone]['graph']
+        body = json.loads(self.request.body)
+        drone_name = body['name']
+
+        if 'range_in_miles' not in body or 'start_location' not in body:
+            logging.error('range_in_miles = {0}, start_location = {1}'.format(range_in_miles, start_location))
+            abort(400)
         else:
-            app.logger.info('computing graph')
-            G = compute_graph(lat, lng, range_in_miles)
-        droneDB[drone] = {
-            'name' : drone,
-            'range' : range_in_miles,
-            'graph' : G,
-            'start_location' : G.get_approx_node(lat, lng)
-        }
+            range_in_miles = int(body['range_in_miles'])
+            lat, lng = body['start_location']
+            start_lat, start_lng = float(lat), float(lng)
+            drone_dict = ndbutils.retrieve(drone_name)
+            if drone_dict and drone_dict['range_in_miles'] == range_in_miles:
+                logging.debug('Found drone {0}'.format(drone_name))
+                drone_graph = drone_dict['graph']
+                creation_time = drone_dict['creation_time']
+                graph_start_node = drone_dict['graph_start_node']
+            else:
+                logging.debug('Creating new drone {0}'.format(drone_name))
+                creation_time = datetime.datetime.now()
+                drone_graph = compute_graph(start_lat, start_lng, range_in_miles)
+                graph_start_node = drone_graph.get_approx_node(start_lat, start_lng)
 
-        # save droneDB back to its pickled file
-        pickle.dump(droneDB, open(droneDB_path, 'wb'))
+            
+            drone_record = {
+                'name' : drone_name,
+                'creation_time' : creation_time,
+                'range_in_miles' : range_in_miles,
+                'graph' : drone_graph,
+                'graph_start_node' : graph_start_node
+            }
+            
+            key = ndbutils.save(drone_name, drone_record)
+            
+            if key:
+                logging.debug('Save succeeded, key = {0}'.format(key))
+            else:
+                logging.error('Save failed')
+                abort(500)
 
-        loc = droneDB[drone]['start_location']
+            record = ndbutils.retrieve(drone_name)
+
+            response = {
+                'success' : True,
+                'name' : record['name'],
+                'creation_time' : record['creation_time'].isoformat(),
+                'range_in_miles' : record['range_in_miles'],
+                'start_location' : drone_graph.get_location(record['graph_start_node']),
+                'graph' : jsonify_graph(record['graph'])
+            }
+
+            self.response.headers['Content-Type'] = 'application/json'   
+            self.response.out.write(json.dumps(response))
+
+
+class RouteDrone(webapp2.RequestHandler):
+
+    def get(self):
+
+        drone_name = str(self.request.get('name'))
+        target_lat, target_lng = float(self.request.get('lat')), float(self.request.get('lng'))
+
+        drone_dict = ndbutils.retrieve(drone_name)
+        drone_graph = drone_dict['graph']
+        graph_start_node = drone_dict['graph_start_node']
         response = {
-            'name' : droneDB[drone]['name'],
-            'range' : droneDB[drone]['range'],
-            'start_location' : [loc.lat, loc.lng, loc.ele],
-            'graph' : jsonify_graph(G)
+            'success' : True, 
+            'name' : drone_dict['name'],
+            'range_in_miles' : drone_dict['range_in_miles'],
+            'start_location' : drone_graph.get_location(graph_start_node)
         }
 
-        return flask.jsonify(response)
-
-@app.route('/drones/<drone>', methods=['GET'])
-def get_drone_info(drone):
-    if drone in droneDB:
-        loc = droneDB[drone]['start_location']
-        response = {
-            'name' : droneDB[drone]['name'],
-            'range' : droneDB[drone]['range'],
-            'start_location' : [loc.lat, loc.lng, loc.ele]
-        }
-        print droneDB[drone]['graph'].lat_lower_limit, droneDB[drone]['graph'].lat_upper_limit, droneDB[drone]['graph'].lng_lower_limit, droneDB[drone]['graph'].lng_upper_limit
-        args = flask.request.args
-        if 'action' in args:
-            if args['action'] == 'route':
-                lat,lng = args['target'].split(',')
-                lat, lng = float(lat), float(lng)
-                if lat <= droneDB[drone]['graph'].lat_upper_limit and lat >= droneDB[drone]['graph'].lat_lower_limit \
-                        and lng <= droneDB[drone]['graph'].lng_upper_limit and lng >= droneDB[drone]['graph'].lng_lower_limit:
-                    target_location = droneDB[drone]['graph'].get_approx_node(lat, lng)
-                    droneDB[drone]['graph'].print_node(target_location)
-                    route = Astar(droneDB[drone]['start_location'], target_location, droneDB[drone]['graph'])
-                    response['route'] = jsonify_route(route)
-                else:
-                    error = {'Error' : 'Lat and Lng coordinates not in drone range.'}
-                    response = flask.jsonify(error)
+        if target_lat <= drone_graph.lat_upper_limit and target_lat >= drone_graph.lat_lower_limit \
+                and target_lng <= drone_graph.lng_upper_limit and target_lng >= drone_graph.lng_lower_limit:
+            graph_end_node = drone_graph.get_approx_node(target_lat, target_lng)
+            route = Astar(graph_start_node, graph_end_node, drone_graph)
+            response['adjusted_end_location'] = drone_graph.get_location(graph_end_node)
+            route_request_time = datetime.datetime.now()
+            response['route_request_time'] = route_request_time.isoformat()
+            response['computed_route'] = jsonify_route(route)
         else:
-            # print out graph
-            response['graph'] = jsonify_graph(droneDB[drone]['graph'])
-    else:
-        error = {'Error' : 'Drone does not exist.'}
-        response = flask.jsonify(error)
+            # target_lat, target_lng does not fall within drone_graph boundary, so return error
+            response = {
+                'success' : False,
+                'error_message' : 'Target coordinates {0}, {1} out of drone range brounds.'.format(target_lat, target_lng),
+                'drone_range_bounds' : {
+                    'lat_lower_limit' : drone_graph.lat_lower_limit,
+                    'lat_upper_limit' : drone_graph.lat_upper_limit,
+                    'lng_lower_limit' : drone_graph.lng_lower_limit,
+                    'lng_upper_limit' : drone_graph.lng_upper_limit
+                }
+            }
 
-    return flask.jsonify(response)
+        self.response.headers['Content-Type'] = 'application/json'     
+        self.response.out.write(json.dumps(response))
 
+application = webapp2.WSGIApplication([
+    ('/', MainPage),
+    ('/create', CreateDrone),
+    ('/route', RouteDrone),
+], debug=True)
 
-if __name__ == "__main__":
-    atexit.register(clean_up)
-    app.run(debug=True)
+application.error_handlers[404] = handle_404
+application.error_handlers[500] = handle_500
+logging.getLogger().setLevel(logging.DEBUG)

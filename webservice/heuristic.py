@@ -29,4 +29,3 @@ def heuristic_estimate(graph):
     for node1 in graph.get_nodes():
         for node2 in graph.get_nodes():
             node_pair_cost_map[(node1, node2)] = cost_of_path(node1, node2)
-

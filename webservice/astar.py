@@ -28,6 +28,7 @@ def Astar(start, goal, G):
             if f_score[i] < lowest_cost:
                 lowest_cost = f_score[i]
                 current = i
+        #TODO Fix side case where starting location is target location
         if current == goal:
             return reconstruct_path(came_from, goal)
         openset.remove(current)
@@ -66,41 +67,3 @@ def g_score_comp(node, came_from):
     for n in came_from[node]:
         sumcost += n.ele
     return sumcost
-
-
-'''def compute_route(ROWS, COLUMNS):
-
-    G = Graph()
-    grid = [[None for i in range(COLUMNS)] for j in range(ROWS)]
-    elevation_map = shelve.open(SHELVE_FILE)
-
-    for key in elevation_map.keys():
-        for k in range(len(elevation_map[key])):
-            grid[int(key)][k] = elevation_map[key][k]
-
-    elevation_map.close()
-
-    for i in range(ROWS):
-        for node in grid[i]:
-            G.add_node(node)
-
-    for i in range(ROWS):
-        for j in range(COLUMNS):
-            if j > 0:  # has a left neighbor
-                G.add_edge(grid[i][j], grid[i][j - 1])
-            if j < COLUMNS - 1:  # has right neighbor
-                G.add_edge(grid[i][j], grid[i][j + 1])
-            if i > 0:  # has top neighbor
-                G.add_edge(grid[i][j], grid[i - 1][j])
-            if i < ROWS - 1:  # has bottom neighbor
-                G.add_edge(grid[i][j], grid[i + 1][j])
-            if j > 0 and i > 0:  # has top left neighbor
-                G.add_edge(grid[i][j], grid[i - 1][j - 1])
-            if j < COLUMNS - 1 and i > 0:  # has top right neighbor
-                G.add_edge(grid[i][j], grid[i - 1][j + 1])
-            if j > 0 and i < ROWS - 1:  # has bottom left neighbor
-                G.add_edge(grid[i][j], grid[i + 1][j - 1])
-            if j < COLUMNS - 1 and i < ROWS - 1:  # has bottom right neighbor
-                G.add_edge(grid[i][j], grid[i + 1][j + 1])
-'''
-
