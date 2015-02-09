@@ -5,6 +5,8 @@ import graph
 
 from google.appengine.api import users
 
+from google.appengine.ext.webapp import template
+
 import logging
 import webapp2
 import json
@@ -61,13 +63,23 @@ def jsonify_route(route):
 class MainPage(webapp2.RequestHandler):
     
     def get(self):
-        self.response.write("Welcome to Drone Map")
+        
+        pass
 
 class CreateDrone(webapp2.RequestHandler):
 
-    def put(self):
+    def post(self):
 
-        body = json.loads(self.request.body)
+        print "hello"
+
+        body = {
+            'name' : self.request.get('name'),
+            'range_in_miles' : self.request.get('range_in_miles'),
+            'start_location' : self.request.get('start_location').split(',')
+        }
+
+        print body
+        # body = json.loads(self.request.body)
         drone_name = body['name']
 
         if 'range_in_miles' not in body or 'start_location' not in body:
@@ -118,7 +130,7 @@ class CreateDrone(webapp2.RequestHandler):
             }
 
             self.response.headers['Content-Type'] = 'application/json'   
-            self.response.out.write(json.dumps(response))
+            self.response.out.write(json.dumps(response, indent=2))
 
 
 class RouteDrone(webapp2.RequestHandler):

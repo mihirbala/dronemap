@@ -8,6 +8,10 @@ handlers:
 - url: /stylesheets
   static_dir: stylesheets
 
+- url: /
+  static_files: index.html
+  upload: index.html
+
 - url: /.*
   script: restapi.application
 
