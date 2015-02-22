@@ -14,9 +14,12 @@ def cost_of_path(node, goal):
     '''
 
     #print 'not expensive node pair', node.x, node.y
-    dx = abs(node.ele - goal.ele)
-    dy = abs(node.ele - goal.ele)
-    return dx + dy
+    dx = -1*(node.ele - goal.ele)
+    if node.ele >= 3200:
+        dele = 10000
+    else:
+        dele = 0
+    return dele + dx
 
 
 def heuristic_estimate(graph):

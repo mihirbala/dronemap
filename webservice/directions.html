@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <title>Directions service</title>
+    <style>
+      html, body, #map-canvas {
+        height: 100%;
+        margin: 0px;
+        padding: 0px
+      }
+      #panel {
+        position: absolute;
+        top: 5px;
+        left: 50%;
+        margin-left: -180px;
+        z-index: 5;
+        background-color: #fff;
+        padding: 5px;
+        border: 1px solid #999;
+      }
+    </style>
+
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.js"></script>
+    <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?v=3&sensor=true"></script>
+    
+
+  <script>
+
+var flightPath = null;
+
+function initialize() {
+  var mapOptions = {
+    zoom: 8,
+    center: new google.maps.LatLng({{lat}},{{lng}}),
+    mapTypeId: google.maps.MapTypeId.TERRAIN
+  };
+
+  var map = new google.maps.Map(document.getElementById('map-canvas'),
+      mapOptions);
+
+  var draw_circle = new google.maps.Circle({
+        center: new google.maps.LatLng({{lat}}, {{lng}}),
+        radius: {{range}},
+        strokeColor: "#FF0000",
+        strokeOpacity: 0.8,
+        strokeWeight: 2,
+        fillColor: "#FF0000",
+        fillOpacity: 0.01,
+        map: map
+  });
+
+
+  // marker STARTS    
+  var start_marker = new google.maps.Marker({position: new google.maps.LatLng({{lat}},{{lng}}), icon: "http://maps.google.com/mapfiles/ms/icons/green-dot.png", title:"Current Location"});
+  start_marker.setMap(map);
+  // marker ENDS
+
+  var target_marker = new google.maps.Marker({position: new google.maps.LatLng({{lat}},{{lng}}), title:"Target Location"});
+  target_marker.setMap(map);
+
+    // info-window STARTS   
+  var infowindow = new google.maps.InfoWindow({ content: "<div class='map_bg_logo'><span style='color:#1270a2;'><b><?=$row->" + "{{name}}" + "</b></span><div style='border-top:1px dotted #ccc; height:1px;  margin:5px 0;'></div><span style='color:#555;font-size:11px;'><b>Coordinates: </b><?=$row->" + "{{lat}}" + ", " + "{{lng}}" + "</span></div>"});
+
+  google.maps.event.addListener(draw_circle, 'click', function(event) {
+      //var marker = new google.maps.Marker({position: event.latLng, title:"Target Location"});
+      //marker.setMap(map);
+      target_marker.setPosition(event.latLng);
+      draw_route(get_route(event.latLng.lat(), event.latLng.lng()), map);
+  });
+  
+  google.maps.event.addListener(start_marker, 'mouseover', function() {
+      infowindow.open(map,start_marker);
+  });
+
+  google.maps.event.addListener(start_marker, 'mouseout', function() {
+      infowindow.close(map,start_marker);
+  });
+    // info-window ENDS 
+}
+
+function draw_route(route, map) {
+  
+  if (flightPath !== null) {
+    flightPath.setMap(null);
+  }
+
+  var flightPlanCoordinates = [];
+
+  for (i = 0; i < route.length; i ++) {
+    new_coord = new google.maps.LatLng(route[i][0], route[i][1]);
+    flightPlanCoordinates.push(new_coord);
+  }    
+  
+  flightPath = new google.maps.Polyline({
+    path: flightPlanCoordinates,
+    geodesic: true,
+    strokeColor: '#FF0000',
+    strokeOpacity: 1.0,
+    strokeWeight: 2
+  });
+
+  flightPath.setMap(map);
+}
+
+function get_route(lat, lng) {
+  xmlhttp = new XMLHttpRequest();
+  url = "http://localhost:8080/route?name=" + "{{name}}" + "&target_location=" + lat + "," + lng;
+  xmlhttp.open("GET", url, false);
+  xmlhttp.send();
+  json_object = JSON.parse(xmlhttp.responseText);
+  return json_object.route;
+}
+
+google.maps.event.addDomListener(window, 'load', initialize);
+
+
+ </script>
+  </head>
+   <body>
+    <div id="map-canvas"></div>
+  </body>
+</html>

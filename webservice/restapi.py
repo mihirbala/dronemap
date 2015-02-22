@@ -70,15 +70,12 @@ class CreateDrone(webapp2.RequestHandler):
 
     def post(self):
 
-        print "hello"
-
         body = {
             'name' : self.request.get('name'),
             'range_in_miles' : self.request.get('range_in_miles'),
             'start_location' : self.request.get('start_location').split(',')
         }
 
-        print body
         # body = json.loads(self.request.body)
         drone_name = body['name']
 
@@ -129,8 +126,19 @@ class CreateDrone(webapp2.RequestHandler):
                 'graph' : jsonify_graph(record['graph'])
             }
 
-            self.response.headers['Content-Type'] = 'application/json'   
-            self.response.out.write(json.dumps(response, indent=2))
+            range_in_meters = drone_dict['range_in_miles']*1609.34
+
+            template_values = {
+                'lat' : drone_dict['graph_start_node'].lat,
+                'lng' : drone_dict['graph_start_node'].lng,
+                'range' : range_in_meters,
+                'name' : drone_dict['name'],
+            }
+
+            #self.response.headers['Content-Type'] = 'application/json'   
+            #self.response.out.write(json.dumps(response, indent=2))
+            path = os.path.join(os.path.dirname(__file__), 'directions.html')
+            self.response.out.write(template.render(path, template_values))
 
 
 class RouteDrone(webapp2.RequestHandler):
@@ -138,7 +146,8 @@ class RouteDrone(webapp2.RequestHandler):
     def get(self):
 
         drone_name = str(self.request.get('name'))
-        target_lat, target_lng = float(self.request.get('lat')), float(self.request.get('lng'))
+        target_location = self.request.get('target_location').split(",")
+        target_lat, target_lng = float(target_location[0]), float(target_location[1])
 
         drone_dict = ndbutils.retrieve(drone_name)
         drone_graph = drone_dict['graph']
@@ -158,6 +167,27 @@ class RouteDrone(webapp2.RequestHandler):
             route_request_time = datetime.datetime.now()
             response['route_request_time'] = route_request_time.isoformat()
             response['computed_route'] = jsonify_route(route)
+            
+            range_in_meters = drone_dict['range_in_miles']*1609.34
+
+            organized_route = []
+
+            for gps in route:
+                coord = [gps.lat, gps.lng]
+                organized_route.append(coord)
+
+            template_values = {
+                'route' : organized_route,
+                'lat' : drone_dict['graph_start_node'].lat,
+                'lng' : drone_dict['graph_start_node'].lng,
+                'range' : range_in_meters,
+                'name' : drone_dict['name'],
+                'last_node' : route[(len(route)-1)]
+            }
+            
+
+            self.response.out.write(json.dumps(template_values))
+
         else:
             # target_lat, target_lng does not fall within drone_graph boundary, so return error
             response = {
@@ -171,8 +201,8 @@ class RouteDrone(webapp2.RequestHandler):
                 }
             }
 
-        self.response.headers['Content-Type'] = 'application/json'     
-        self.response.out.write(json.dumps(response))
+            self.response.headers['Content-Type'] = 'application/json'     
+            self.response.out.write(json.dumps(response, indent=2))
 
 application = webapp2.WSGIApplication([
     ('/', MainPage),
