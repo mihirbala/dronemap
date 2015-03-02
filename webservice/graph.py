@@ -78,6 +78,7 @@ class Graph:
 
 
     def print_node(self, node):
+        # print '[{0}, {1}, {2}]'.format(node.lat, node.lng, node.ele)
         logging.debug('[{0}, {1}, {2}]'.format(node.lat, node.lng, node.ele))
 
     def get_location(self, node):
@@ -85,7 +86,7 @@ class Graph:
         return [node.lat, node.lng, node.ele]
             
     def add_node(self, node):
-        # self.print_node(node)
+        self.print_node(node)
         self.nodes.add(node)
 
     def get_nodes(self):

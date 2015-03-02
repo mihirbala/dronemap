@@ -1,124 +1,297 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <title>Drone Router (c) Mihir Bala</title>
     <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
     <meta charset="utf-8">
-    <title>Directions service</title>
     <style>
       html, body, #map-canvas {
         height: 100%;
         margin: 0px;
         padding: 0px
       }
-      #panel {
-        position: absolute;
-        top: 5px;
-        left: 50%;
-        margin-left: -180px;
-        z-index: 5;
-        background-color: #fff;
-        padding: 5px;
-        border: 1px solid #999;
+      .controls {
+        margin-top: 16px;
+        border: 1px solid transparent;
+        border-radius: 2px 0 0 2px;
+        box-sizing: border-box;
+        -moz-box-sizing: border-box;
+        height: 32px;
+        outline: none;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
       }
+
+      #pac-input {
+        background-color: #fff;
+        font-family: Roboto;
+        font-size: 15px;
+        font-weight: 300;
+        margin-left: 12px;
+        padding: 0 11px 0 13px;
+        text-overflow: ellipsis;
+        width: 400px;
+      }
+
+      #pac-input:focus {
+        border-color: #4d90fe;
+        margin-left: 12px;
+        padding-left: 14px;  /* Regular padding-left + 1. */
+        width: 401px;
+      }
+
+      .pac-container {
+        font-family: Roboto;
+      }
+
+      #type-selector {
+        color: #fff;
+        background-color: #4d90fe;
+        padding: 5px 11px 0px 11px;
+      }
+
+      #type-selector label {
+        font-family: Roboto;
+        font-size: 13px;
+        font-weight: 300;
+      }
+
     </style>
+    <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&signed_in=true&libraries=places"></script>
 
-    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.js"></script>
-    <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?v=3&sensor=true"></script>
-    
+    <script>
 
-  <script>
+      var map;
+      var markers = [];
+      var firstClickListener;
+      var secondClickListener;
+      var _startLocation;
+      var _endLocation;
 
-var flightPath = null;
-
-function initialize() {
-  var mapOptions = {
-    zoom: 8,
-    center: new google.maps.LatLng({{lat}},{{lng}}),
-    mapTypeId: google.maps.MapTypeId.TERRAIN
-  };
-
-  var map = new google.maps.Map(document.getElementById('map-canvas'),
-      mapOptions);
-
-  var draw_circle = new google.maps.Circle({
-        center: new google.maps.LatLng({{lat}}, {{lng}}),
-        radius: {{range}},
-        strokeColor: "#FF0000",
-        strokeOpacity: 0.8,
-        strokeWeight: 2,
-        fillColor: "#FF0000",
-        fillOpacity: 0.01,
-        map: map
-  });
+      // TODO: convert these into Jinja variables, so it can be set by
+      // the code that handles the create_drone API call
+      var DRONE_NAME = "{{drone_name}}";
+      var RANGE_IN_METERS = {{range_in_meters}};
 
 
-  // marker STARTS    
-  var start_marker = new google.maps.Marker({position: new google.maps.LatLng({{lat}},{{lng}}), icon: "http://maps.google.com/mapfiles/ms/icons/green-dot.png", title:"Current Location"});
-  start_marker.setMap(map);
-  // marker ENDS
+      function initialize() {
 
-  var target_marker = new google.maps.Marker({position: new google.maps.LatLng({{lat}},{{lng}}), title:"Target Location"});
-  target_marker.setMap(map);
+        initialMapCenter = new google.maps.LatLng(-13.156140, -72.540875);
 
-    // info-window STARTS   
-  var infowindow = new google.maps.InfoWindow({ content: "<div class='map_bg_logo'><span style='color:#1270a2;'><b><?=$row->" + "{{name}}" + "</b></span><div style='border-top:1px dotted #ccc; height:1px;  margin:5px 0;'></div><span style='color:#555;font-size:11px;'><b>Coordinates: </b><?=$row->" + "{{lat}}" + ", " + "{{lng}}" + "</span></div>"});
+        // render the initial map, centered at initialMapCenter 
+        var mapOptions = {
+            zoom: 2,
+            center: initialMapCenter,
+            mapTypeId: google.maps.MapTypeId.HYBRID
+        };
+        map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
 
-  google.maps.event.addListener(draw_circle, 'click', function(event) {
-      //var marker = new google.maps.Marker({position: event.latLng, title:"Target Location"});
-      //marker.setMap(map);
-      target_marker.setPosition(event.latLng);
-      draw_route(get_route(event.latLng.lat(), event.latLng.lng()), map);
-  });
-  
-  google.maps.event.addListener(start_marker, 'mouseover', function() {
-      infowindow.open(map,start_marker);
-  });
+        // create the search box and link it to the UI element.
+        var input = /** @type {HTMLInputElement} */(
+            document.getElementById('pac-input'));
+        map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
 
-  google.maps.event.addListener(start_marker, 'mouseout', function() {
-      infowindow.close(map,start_marker);
-  });
-    // info-window ENDS 
-}
+        var searchBox = new google.maps.places.SearchBox(
+          /** @type {HTMLInputElement} */(input));
 
-function draw_route(route, map) {
-  
-  if (flightPath !== null) {
-    flightPath.setMap(null);
-  }
+        // listen for the event fired when the user selects an item from the
+        // pick list. Retrieve the matching places for that item.
+        google.maps.event.addListener(searchBox, 'places_changed', function () {
+            var places = searchBox.getPlaces();
+            findPlace(places);
+        });
 
-  var flightPlanCoordinates = [];
+        // bias the SearchBox results towards places that are within the bounds of the
+        // current map's viewport.
+        google.maps.event.addListener(map, 'bounds_changed', function() {
+          var bounds = map.getBounds();
+          searchBox.setBounds(bounds);
+        });
 
-  for (i = 0; i < route.length; i ++) {
-    new_coord = new google.maps.LatLng(route[i][0], route[i][1]);
-    flightPlanCoordinates.push(new_coord);
-  }    
-  
-  flightPath = new google.maps.Polyline({
-    path: flightPlanCoordinates,
-    geodesic: true,
-    strokeColor: '#FF0000',
-    strokeOpacity: 1.0,
-    strokeWeight: 2
-  });
+        // listen for the first-click
+        firstClickListener = google.maps.event.addListener(map, 'click', function (e) {
+            firstClickHandler(e.latLng.lat(), e.latLng.lng());
+        });
 
-  flightPath.setMap(map);
-}
-
-function get_route(lat, lng) {
-  xmlhttp = new XMLHttpRequest();
-  url = "http://localhost:8080/route?name=" + "{{name}}" + "&target_location=" + lat + "," + lng;
-  xmlhttp.open("GET", url, false);
-  xmlhttp.send();
-  json_object = JSON.parse(xmlhttp.responseText);
-  return json_object.route;
-}
-
-google.maps.event.addDomListener(window, 'load', initialize);
+      }
 
 
- </script>
+      function findPlace(places) {
+
+        if (places.length == 0) {
+          return;
+        }
+        for (var i = 0, marker; marker = markers[i]; i++) {
+          marker.setMap(null);
+        }
+
+        // for each place, get the icon, place name, and location.
+        markers = [];
+        var bounds = new google.maps.LatLngBounds();
+        for (var i = 0, place; place = places[i]; i++) {
+          var image = {
+            url: place.icon,
+            size: new google.maps.Size(71, 71),
+            origin: new google.maps.Point(0, 0),
+            anchor: new google.maps.Point(17, 34),
+            scaledSize: new google.maps.Size(25, 25)
+          };
+
+          bounds.extend(place.geometry.location);
+        }
+
+        map.fitBounds(bounds);
+
+        map.setZoom(11); // set a reasonable default zoom level
+
+      }
+
+
+      function firstClickHandler(lat, lng) {
+
+        _startLocation = new google.maps.LatLng(lat, lng)
+
+        // place a blue marker at the start location
+        var startMarker = new google.maps.Marker({
+                                position: _startLocation,
+                                icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+                              });
+        startMarker.setMap(map);
+
+        markers.push(startMarker); // remember this marker
+        
+        // draw a circle with center at the start location, showing the drone range
+        var droneRange = new google.maps.Circle({
+                                center: _startLocation,
+                                radius: RANGE_IN_METERS,
+                                strokeColor: "#0000FF",
+                                strokeOpacity: 0.8,
+                                strokeWeight: 4,
+                                fillColor: "#000000",
+                                fillOpacity: 0.0
+                              });
+        droneRange.setMap(map);
+
+        // remove the first-click listener
+        google.maps.event.removeListener(firstClickListener);
+
+        initializeGrid();
+
+        // listen for the second-click, but only if it is within the drone range circle
+        secondClickListener = google.maps.event.addListener(droneRange, 'click', function (e) {
+            secondClickHandler(e.latLng.lat(), e.latLng.lng());
+        });
+
+      }
+
+      function secondClickHandler(lat, lng) {
+
+        _endLocation = new google.maps.LatLng(lat, lng)
+
+        // place a red marker at the end location
+        var endMarker = new google.maps.Marker({
+                                position: _endLocation,
+                                icon: "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
+                            });
+        endMarker.setMap(map);
+        markers.push(endMarker); // remember this marker
+
+        // compute a route from start location to end location, and render it on the map
+        computeAndDisplayRoute();
+
+        // remove the second-click listener, so no more clicks are processed
+        google.maps.event.removeListener(secondClickListener);
+
+      }
+
+      function initializeGrid() {
+
+        // this function calls the /create API to create a grid surrounding the start location
+
+        var xmlhttp = new XMLHttpRequest();
+
+        var startLat = _startLocation.lat();
+        var startLng = _startLocation.lng();
+        var source = startLat + "," + startLng
+
+        // IMPORTANT: the URL must have the same base as this Web page
+        var url = "/initialize?drone_name=" + DRONE_NAME + "&source=" + source;
+
+        xmlhttp.open("POST", url, true);
+        xmlhttp.send();
+
+        if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+
+              alert("Grid initialized successfully!");
+        }
+
+      }
+
+ 
+      function computeAndDisplayRoute() {
+
+        // this function calls the /route REST API to get the route as a JSON dict
+
+        var xmlhttp = new XMLHttpRequest();
+
+        var startLat = _startLocation.lat();
+        var startLng = _startLocation.lng();
+        var source = startLat + "," + startLng
+        var endLat = _endLocation.lat();
+        var endLng = _endLocation.lng();
+        var target = endLat + "," + endLng;
+
+        // IMPORTANT: the URL must have the same base as this Web page
+        var url = "/route?drone_name=" + DRONE_NAME + "&source=" + source + "&target=" + target;
+
+        xmlhttp.open("GET", url, true);
+        xmlhttp.send();
+
+        xmlhttp.onreadystatechange = function() {
+
+          if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+
+              var json_obj = JSON.parse(xmlhttp.responseText);
+              // extract the "route" key, which should be an array
+              var route = json_obj.route;
+              
+              // IMPORTANT: "route" is expected to be an array of [lat, lng]
+              // where lat and lng are of type FLOAT
+
+              // convert the route into Google Maps locations
+              var locations = [];
+              for (var i = 0; i < route.length; i++) {
+                  var lat = route[i][0];
+                  var lng = route[i][1];
+                  //alert(lat + ", " + lng);
+                  var loc = new google.maps.LatLng(lat, lng);
+                  locations.push(loc);
+              }
+
+              // render the route on the map as a polyline
+              var flightPath = new google.maps.Polyline({
+                                path: locations,
+                                geodesic: true,
+                                strokeColor: '#FF0000',
+                                strokeOpacity: 1.0,
+                                strokeWeight: 4
+                            });
+              flightPath.setMap(map);
+
+          }
+
+        }
+
+      }
+
+
+      google.maps.event.addDomListener(window, 'load', initialize);
+
+
+    </script>
   </head>
-   <body>
+  <body>
+    <input id="pac-input" class="controls" type="text"
+        placeholder="Enter a location">
     <div id="map-canvas"></div>
   </body>
 </html>
