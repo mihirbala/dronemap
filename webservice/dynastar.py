@@ -5,6 +5,7 @@ import heapq
 import random
 import mapsapi
 from haversine import haversine
+import logging
 
 NEIGHBOR_DISTANCE = 0.5 # Distance any pair of neighbors in km
 PRECISION = 6 # Decimal places for lat lng values
@@ -63,7 +64,7 @@ class GridWithCosts:
         if len(request_list) > 0:
             request_list_with_ele = mapsapi.get_multi_elevations(request_list)
             self.googlemaps_api_counter += 1
-            print 'Google maps API call ', self.googlemaps_api_counter, ' ', location
+            logging.debug('Google maps API call {0} {1}'.format(self.googlemaps_api_counter, location))
             for location in request_list_with_ele:
                 self.location_cost_map[(location[0], location[1])] = location[2]
 
@@ -73,7 +74,7 @@ class GridWithCosts:
             return self.location_cost_map[location]
         else:
             self.googlemaps_api_counter += 1
-            print 'Google maps API call ', self.googlemaps_api_counter, ' ', location
+            logging.debug('Google maps API call {0} {1}'.format(self.googlemaps_api_counter, location))
             elevation = mapsapi.get_single_elevation(location)
             self.location_cost_map[location] = elevation
             return elevation
@@ -143,7 +144,8 @@ def get_limits(start, goal):
     lng_resolution = NEIGHBOR_DISTANCE/lng_diff
     resolution = Resolution(lat_resolution, lng_resolution)
 
-    print lat_limit, lng_limit
+    # print lat_limit, lng_limit #TODO: save this in NDB
+
     return lat_limit, lng_limit, resolution
 
 def heuristic(location_a, location_b):
@@ -183,9 +185,9 @@ def a_star_search(start, goal):
         
         if reached_goal(current, goal, resolution):
             came_from[goal] = current
-            print 'Reached Goal ', current
-            print 'start = ', start
-            print 'goal = ', goal
+            #print 'Reached Goal ', current
+            #print 'start = ', start
+            #print 'goal = ', goal
             break
         
         for next in graph.neighbors(current):

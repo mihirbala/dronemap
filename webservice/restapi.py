@@ -128,9 +128,10 @@ class RouteDrone(webapp2.RequestHandler):
             'gpx_route' : compute_gpx_route(route)
         }
 
-        print '====='
-        print response['gpx_route']
-        print '====='
+        # TODO: save gpx route to NDB
+        #print '====='
+        #print response['gpx_route']
+        #print '====='
 
         self.response.out.write(json.dumps(response))
 
