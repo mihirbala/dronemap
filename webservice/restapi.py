@@ -1,20 +1,19 @@
 import os
 import urllib
 
-import graph
-
 from google.appengine.api import users
-
 from google.appengine.ext.webapp import template
+import ndbutils
+import webapp2
 
 import logging
-import webapp2
 import json
 import datetime
 
-import ndbutils
+import gpxpy
+import gpxpy.gpx
 
-from astar import Astar
+from dynastar import a_star_search
 
 
 def handle_404(request, response, exception):
@@ -32,78 +31,33 @@ def handle_500(request, response, exception):
     response.write('A server error occurred!')
     response.set_status(500)
 
-def compute_graph(lat, lng, range_in_miles):
-    """
-    :type lat: float
-    :type lng: float
-    :type range_in_miles: float
-    :return: GPS
-    """
-    drone_graph = graph.Graph(lat, lng, range_in_miles)
-    return drone_graph
 
-def jsonify_graph(drone_graph):
-    """
-    :type drone_graph: graph.Graph
-    :return:
-    """
-    node_list = []
-    for i, lst in enumerate(drone_graph.get_nodes()):
-        node_list.append([])
-        for node in lst:
-            node_list[i].append(drone_graph.get_location(node))
-    return node_list
 
-def jsonify_route(route):
-    loc_list = []
-    for loc in route:
-        new_loc = [loc.lat, loc.lng, loc.ele]
-        loc_list.append(new_loc)
-    return loc_list
+def compute_gpx_route(route):
+    # Converts route of waypoints into GPX format
+    gpx = gpxpy.gpx.GPX()
+
+    # Create first track in our GPX:
+    gpx_track = gpxpy.gpx.GPXTrack()
+    gpx.tracks.append(gpx_track)
+
+    # Create first segment in our GPX track:
+    gpx_segment = gpxpy.gpx.GPXTrackSegment()
+    gpx_track.segments.append(gpx_segment)
+
+    # Create points:
+    for location in route:
+        (lat, lng, ele) = location
+        gpx_segment.points.append(gpxpy.gpx.GPXTrackPoint(lat, lng, elevation=ele))
+    
+    return gpx.to_xml()
 
 
 class MainPage(webapp2.RequestHandler):
     
-    def get(self):
-        
-        # delete all entities from NDB
+    def get(self):   
+        # Hack to reset NDB to prevent multiple copies of the same drone
         ndb.delete_multi(Drone.query().fetch(keys_only=True))
-
-
-class InitializeGrid(webapp2.RequestHandler):
-
-    def post(self):
-
-        drone_name = self.request.get("drone_name")
-        start_lat, start_lng = self.request.get("source").split(",")
-
-        start_lat, start_lng = float(start_lat), float(start_lng)
-        
-        record = ndbutils.retrieve(drone_name)
-
-        range_in_meters = record['range_in_meters']
-
-        logging.debug('range_in_meters = {0}'.format(range_in_meters))
-
-        drone_graph = compute_graph(start_lat, start_lng, range_in_meters*0.000621371)
-
-        graph_start_node = drone_graph.get_approx_node(start_lat, start_lng)
-        
-        drone_record = {
-            'drone_name' : drone_name,
-            'update_time' : datetime.datetime.now(),
-            'range_in_meters' : range_in_meters,
-            'graph' : drone_graph,
-            'graph_start_node' : graph_start_node
-        }
-        
-        key = ndbutils.save(drone_name, drone_record)
-        
-        if key:
-            logging.debug('Save succeeded, key = {0}'.format(key))
-        else:
-            logging.error('Save failed')
-            abort(500)
 
 
 class CreateDroneAndDisplayMap(webapp2.RequestHandler):
@@ -126,13 +80,12 @@ class CreateDroneAndDisplayMap(webapp2.RequestHandler):
 
         drone_name = self.request.get('drone_name')
         range_in_meters = int(self.request.get('range_in_kilometers'))*1000
+        googlemaps_api_key = self.request.get('googlemaps_api_key')
 
         drone_record = {
             'drone_name' : drone_name,
             'update_time' : datetime.datetime.now(),
-            'range_in_meters' : range_in_meters,
-            'graph' : None,
-            'graph_start_node' : None
+            'range_in_meters' : range_in_meters
         }
             
         key = ndbutils.save(drone_name, drone_record)
@@ -155,39 +108,37 @@ class RouteDrone(webapp2.RequestHandler):
     def get(self):
 
         drone_name = str(self.request.get('drone_name'))
-        target_location = self.request.get('target').split(",")
-        target_lat, target_lng = float(target_location[0]), float(target_location[1])
 
-        drone_dict = ndbutils.retrieve(drone_name)
-        drone_graph = drone_dict['graph']
-        graph_start_node = drone_dict['graph_start_node']
-        # print target_lat, target_lng
-        graph_end_node = drone_graph.get_approx_node(target_lat, target_lng)
+        drone_record = ndbutils.retrieve(drone_name)
 
-        route = Astar(graph_start_node, graph_end_node, drone_graph)
-        
-        organized_route = []
+        range_in_meters = drone_record['range_in_meters']
 
-        # transform namedtuple route into json array of arrays
+        source_coords = self.request.get('source').split(",")
+        source_lat, source_lng = float(source_coords[0]), float(source_coords[1])
+        source_location = (round(source_lat,6), round(source_lng,6))
 
-        for gps in route:
-            coord = [gps.lat, gps.lng]
-            organized_route.append(coord)
+        target_coords = self.request.get('target').split(",")
+        target_lat, target_lng = float(target_coords[0]), float(target_coords[1])
+        target_location = (round(target_lat,6), round(target_lng,6))
+
+        route, cost_grid = a_star_search(source_location, target_location)
 
         response = {
-            'route' : organized_route
+            'route' : route,
+            'gpx_route' : compute_gpx_route(route)
         }
 
-        self.response.out.write(json.dumps(response))
+        print '====='
+        print response['gpx_route']
+        print '====='
 
+        self.response.out.write(json.dumps(response))
 
 
 application = webapp2.WSGIApplication([
     ('/', MainPage),
     ('/create', CreateDroneAndDisplayMap),
     ('/route', RouteDrone),
-    #('/display', DisplayMap),
-    ('/initialize', InitializeGrid)
 ], debug=True)
 
 application.error_handlers[404] = handle_404

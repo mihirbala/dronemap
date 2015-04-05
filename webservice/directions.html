@@ -67,6 +67,9 @@
       var _startLocation;
       var _endLocation;
 
+      var endMarker = null;
+      var flightPath = null;
+
       // TODO: convert these into Jinja variables, so it can be set by
       // the code that handles the create_drone API call
       var DRONE_NAME = "{{drone_name}}";
@@ -174,7 +177,7 @@
         // remove the first-click listener
         google.maps.event.removeListener(firstClickListener);
 
-        initializeGrid();
+        // initializeGrid();
 
         // listen for the second-click, but only if it is within the drone range circle
         secondClickListener = google.maps.event.addListener(droneRange, 'click', function (e) {
@@ -185,10 +188,15 @@
 
       function secondClickHandler(lat, lng) {
 
+        if (flightPath) {
+          flightPath.setMap(null);
+          endMarker.setMap(null);
+        }
+
         _endLocation = new google.maps.LatLng(lat, lng)
 
         // place a red marker at the end location
-        var endMarker = new google.maps.Marker({
+        endMarker = new google.maps.Marker({
                                 position: _endLocation,
                                 icon: "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
                             });
@@ -199,7 +207,7 @@
         computeAndDisplayRoute();
 
         // remove the second-click listener, so no more clicks are processed
-        google.maps.event.removeListener(secondClickListener);
+        //google.maps.event.removeListener(secondClickListener);
 
       }
 
@@ -262,13 +270,14 @@
               for (var i = 0; i < route.length; i++) {
                   var lat = route[i][0];
                   var lng = route[i][1];
+                  var ele = route[i][2];
                   //alert(lat + ", " + lng);
                   var loc = new google.maps.LatLng(lat, lng);
                   locations.push(loc);
               }
 
               // render the route on the map as a polyline
-              var flightPath = new google.maps.Polyline({
+              flightPath = new google.maps.Polyline({
                                 path: locations,
                                 geodesic: true,
                                 strokeColor: '#FF0000',
