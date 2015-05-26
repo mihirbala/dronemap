@@ -3,12 +3,13 @@ __author__ = 'mihir'
 import collections
 import heapq
 import random
+import math
 import mapsapi
 from haversine import haversine
 import logging
 
 NEIGHBOR_DISTANCE = 0.5 # Distance any pair of neighbors in km
-PRECISION = 6 # Decimal places for lat lng values
+PRECISION = 4 # Decimal places for lat lng values
 
 # The lattitude and longitude bounds of the grid
 Limit = collections.namedtuple('limit', ['upper', 'lower'])
@@ -20,11 +21,11 @@ class GridWithCosts:
 
     googlemaps_api_counter = 0 # Counts API requests to google maps 
     
-    def __init__(self, lat_limit, lng_limit, resolution):
+    def __init__(self, lat_limit, lng_limit, resolution, cost_map):
         self.lat_limit = lat_limit # Lattitude bounds
         self.lng_limit = lng_limit # Longitude bounds
         self.resolution = resolution # Resolution as defined above
-        self.location_cost_map = {} # Map of (lat,lng) to elevation
+        self.location_cost_map = cost_map # Map of (lat,lng) to elevation
     
     def cost(self, location_a, location_b):
         # The cost of travelling from location a to b
@@ -43,40 +44,65 @@ class GridWithCosts:
         (lat, lng) = location
         return (round(lat, PRECISION), round(lng, PRECISION))
 
-    def neighbors(self, location):
+    def neighbors(self, location, SQUARE=True):
         # Finds the neighbors around given location
         (lat, lng) = location
-        results = [(lat+self.resolution.lat, lng), (lat, lng-self.resolution.lng), 
-                (lat-self.resolution.lat, lng), (lat, lng+self.resolution.lng)]
+        if SQUARE:
+            results = [(lat+self.resolution.lat, lng), (lat, lng-self.resolution.lng), 
+                        (lat-self.resolution.lat, lng), (lat, lng+self.resolution.lng)]
+        else: # Hexagon
+            results = [(lat, lng-self.resolution.lng), (lat, lng-self.resolution.lng),
+                    (lat+(self.resolution.lat*math.sqrt(3)/2), lng+(self.resolution.lng/2)),
+                    (lat+(self.resolution.lat*math.sqrt(3)/2), lng-(self.resolution.lng/2)),
+                    (lat-(self.resolution.lat*math.sqrt(3)/2), lng+(self.resolution.lng/2)),
+                    (lat-(self.resolution.lat*math.sqrt(3)/2), lng-(self.resolution.lng/2))]
+        for neighbor in results:
+            neighbor = (round(neighbor[0], PRECISION), round(neighbor[1], PRECISION))
         results = filter(self.in_bounds, results) # Check if neighbors are in bounds
         results = map(self.round, results) # Round all neighbors to PRECISION
         # Set the elevation value for all neighbors from google maps API
         self.set_elevation(results)
         return results
 
-    def set_elevation(self, location_list):
+    def set_elevation(self, location_list, API=False):
         # Set the elevation value for all locations in location_list that
         # don't already have this value set
         request_list = []
         for location in location_list:
             if location not in self.location_cost_map: 
                 request_list.append(location)
-        if len(request_list) > 0:
-            request_list_with_ele = mapsapi.get_multi_elevations(request_list)
-            self.googlemaps_api_counter += 1
-            logging.debug('Google maps API call {0} {1}'.format(self.googlemaps_api_counter, location))
-            for location in request_list_with_ele:
-                self.location_cost_map[(location[0], location[1])] = location[2]
+        if API:
+            if len(request_list) > 0:
+                request_list_with_ele = mapsapi.get_multi_elevations(request_list)
+                self.googlemaps_api_counter += 1
+                print self.googlemaps_api_counter
+                logging.debug('Google maps API call {0} {1}'.format(self.googlemaps_api_counter, location))
+                for location in request_list_with_ele:
+                    self.location_cost_map[(location[0], location[1])] = location[2]
+        else:
+            if len(request_list) > 0:
+                for location in request_list:
+                    self.location_cost_map[(location[0], location[1])] = random.randint(1,100)
+                    self.googlemaps_api_counter += 1
+                    print self.googlemaps_api_counter
+            
 
-    def get_elevation(self, location):
+    def get_elevation(self, location, API=False):
         # Get the elevation value for a single location
         if location in self.location_cost_map:
             return self.location_cost_map[location]
         else:
-            self.googlemaps_api_counter += 1
-            logging.debug('Google maps API call {0} {1}'.format(self.googlemaps_api_counter, location))
-            elevation = mapsapi.get_single_elevation(location)
-            self.location_cost_map[location] = elevation
+            if API:
+                self.googlemaps_api_counter += 1
+                print self.googlemaps_api_counter
+                logging.debug('Google maps API call {0} {1}'.format(self.googlemaps_api_counter, location))
+                elevation = mapsapi.get_single_elevation(location)
+                self.location_cost_map[location] = elevation
+            else:
+                elevation = random.randint(1,100)
+                self.googlemaps_api_counter += 1
+                print self.googlemaps_api_counter
+                self.location_cost_map[location] = elevation
             return elevation
 
 class PriorityQueue:
@@ -115,7 +141,7 @@ def reached_goal(current, goal, resolution):
         return True
     return False
 
-def get_limits(start, goal):
+def get_limits(start, range_in_kilometers):
     # Computes the lattitude and longitude bounds and resolution
     # in lat lng units
     lat_origin, lng_origin = start[:]
@@ -124,19 +150,18 @@ def get_limits(start, goal):
     # This accounts for the spherical nature of earth which causes the
     # distance between longitude points to vary between the poles and
     # the equator
-    start_goal_dist = haversine(start, goal) 
 
     # Find the diff between two lat lines at this lng
     lat_diff = haversine((1, lng_origin), (2, lng_origin)) 
-    upper_lat = lat_origin + (start_goal_dist/lat_diff)
-    lower_lat = lat_origin - (start_goal_dist/lat_diff)
+    upper_lat = lat_origin + (range_in_kilometers/lat_diff)
+    lower_lat = lat_origin - (range_in_kilometers/lat_diff)
     # Compute the upper & lower lattitude bounds
     lat_limit = Limit(round(upper_lat,PRECISION), round(lower_lat,PRECISION))
 
     # Find the diff between two lng lines at this lat
     lng_diff = haversine((lat_origin, 1), (lat_origin, 2)) 
-    upper_lng = lng_origin + (start_goal_dist/lng_diff)
-    lower_lng = lng_origin - (start_goal_dist/lng_diff)
+    upper_lng = lng_origin + (range_in_kilometers/lng_diff)
+    lower_lng = lng_origin - (range_in_kilometers/lng_diff)
     # Compute the upper & lower longtitude bounds
     lng_limit = Limit(round(upper_lng,PRECISION), round(lower_lng,PRECISION))
 
@@ -155,7 +180,7 @@ def heuristic(location_a, location_b):
     (lat2, lng2) = location_b
     return abs(lat1 - lat2) + abs(lng1 - lng2)
 
-def a_star_search(start, goal):
+def a_star_search(start, goal, range_in_kilometers, cost_map, demo_info=None):
     # Applies a modified A* algorithm to compute the most
     # efficient route from start to goal location.
     # This modification is based on Amit's A* implementation 
@@ -168,10 +193,14 @@ def a_star_search(start, goal):
     #     of goal
     #   - Changed grid template from 4 sided square to 6 sided hexagon for
     #     smoother paths (less zig-zagging)
-    #   - 
-    lat_limit, lng_limit, resolution = get_limits(start, goal)
+    if demo_info:
+        lat_limit = demo_info['lat_limit']
+        lng_limit = demo_info['lng_limit']
+        resolution = demo_info['resolution']
+    else:
+        lat_limit, lng_limit, resolution = get_limits(start, range_in_kilometers)
 
-    graph = GridWithCosts(lat_limit, lng_limit, resolution)
+    graph = GridWithCosts(lat_limit, lng_limit, resolution, cost_map)
 
     frontier = PriorityQueue()
     frontier.put(start, 0)
@@ -198,4 +227,4 @@ def a_star_search(start, goal):
                 frontier.put(next, priority)
                 came_from[next] = current
     
-    return reconstruct_path(graph, came_from, start, goal), cost_so_far
+    return reconstruct_path(graph, came_from, start, goal), cost_so_far, graph.location_cost_map

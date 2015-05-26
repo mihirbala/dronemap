@@ -73,47 +73,55 @@
       // TODO: convert these into Jinja variables, so it can be set by
       // the code that handles the create_drone API call
       var DRONE_NAME = "{{drone_name}}";
-      var RANGE_IN_METERS = {{range_in_meters}};
+      var RANGE_IN_METERS = {{range_in_kilometers}}*1000;
 
 
       function initialize() {
 
-        initialMapCenter = new google.maps.LatLng(-13.156140, -72.540875);
+        initialMapCenter = new google.maps.LatLng(53.1667, -119.4379);
 
         // render the initial map, centered at initialMapCenter 
         var mapOptions = {
-            zoom: 2,
+            zoom: 11,
             center: initialMapCenter,
             mapTypeId: google.maps.MapTypeId.HYBRID
         };
         map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
 
-        // create the search box and link it to the UI element.
-        var input = /** @type {HTMLInputElement} */(
-            document.getElementById('pac-input'));
-        map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
+        if (DRONE_NAME == 'DEMO') {
+          
+          firstClickHandler(53.1667, -119.4379)
 
-        var searchBox = new google.maps.places.SearchBox(
-          /** @type {HTMLInputElement} */(input));
+        } else {
 
-        // listen for the event fired when the user selects an item from the
-        // pick list. Retrieve the matching places for that item.
-        google.maps.event.addListener(searchBox, 'places_changed', function () {
-            var places = searchBox.getPlaces();
-            findPlace(places);
-        });
+          // create the search box and link it to the UI element.
+          var input = /** @type {HTMLInputElement} */(
+              document.getElementById('pac-input'));
+          map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
 
-        // bias the SearchBox results towards places that are within the bounds of the
-        // current map's viewport.
-        google.maps.event.addListener(map, 'bounds_changed', function() {
-          var bounds = map.getBounds();
-          searchBox.setBounds(bounds);
-        });
+          var searchBox = new google.maps.places.SearchBox(
+            /** @type {HTMLInputElement} */(input));
 
-        // listen for the first-click
-        firstClickListener = google.maps.event.addListener(map, 'click', function (e) {
-            firstClickHandler(e.latLng.lat(), e.latLng.lng());
-        });
+          // listen for the event fired when the user selects an item from the
+          // pick list. Retrieve the matching places for that item.
+          google.maps.event.addListener(searchBox, 'places_changed', function () {
+              var places = searchBox.getPlaces();
+              findPlace(places);
+          });
+
+          // bias the SearchBox results towards places that are within the bounds of the
+          // current map's viewport.
+          google.maps.event.addListener(map, 'bounds_changed', function() {
+            var bounds = map.getBounds();
+            searchBox.setBounds(bounds);
+          });
+
+          // listen for the first-click
+          firstClickListener = google.maps.event.addListener(map, 'click', function (e) {
+              firstClickHandler(e.latLng.lat(), e.latLng.lng());
+          });
+
+        }
 
       }
 
@@ -176,8 +184,6 @@
 
         // remove the first-click listener
         google.maps.event.removeListener(firstClickListener);
-
-        // initializeGrid();
 
         // listen for the second-click, but only if it is within the drone range circle
         secondClickListener = google.maps.event.addListener(droneRange, 'click', function (e) {
@@ -249,7 +255,11 @@
         var target = endLat + "," + endLng;
 
         // IMPORTANT: the URL must have the same base as this Web page
-        var url = "/route?drone_name=" + DRONE_NAME + "&source=" + source + "&target=" + target;
+        if (DRONE_NAME == 'DEMO') {
+          var url = "/demo?drone_name=" + DRONE_NAME + "&source=" + source + "&target=" + target;
+        } else {
+          var url = "/route?drone_name=" + DRONE_NAME + "&source=" + source + "&target=" + target;
+        }
 
         xmlhttp.open("GET", url, true);
         xmlhttp.send();

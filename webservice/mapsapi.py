@@ -2,11 +2,11 @@ from google.appengine.api import urlfetch
 import json
 import logging
 
-K1 = "AIzaSyBqTRpHolOOb5d5yC"
+K1 = "AIzaSyBqTRpHolOOb5d5yC" # The two pieces of the API key
 K2 = "gfnSY2zHhE1X4caA"
 API_KEY = K1 + "-" + K2
 URL = "https://maps.googleapis.com/maps/api/elevation/json?key=" + API_KEY + "&locations="
-MAX_URL_LEN = 2000
+MAX_URL_LEN = 2000 # Max URL length to determine how many calls we can make in one dispatch
 
 def get_multi_elevations(location_list):
     # Makes a bulk call to Google Maps elevation API to get the elevation value for
@@ -14,6 +14,8 @@ def get_multi_elevations(location_list):
     waypoint_list = []
     url = URL
     url_len = len(URL)
+    # Denotes the first location in the list so that the string concatenation
+    # places commas appropriately
     first_location = True
 
     for location in location_list:
@@ -22,13 +24,16 @@ def get_multi_elevations(location_list):
         if first_location:
             first_location = False
         else:
+            # Separate coordinate pairs in the request url
             location_str = "|" + location_str
         location_str_len = len(location_str)
         if url_len + location_str_len <= MAX_URL_LEN:
-            url += location_str
-            url_len += location_str_len
+            # Makes sure that url_len has not exceeded the max url length
+            url += location_str 
+            url_len += location_str_len 
         else:
-            # print url
+            # If url_len does exceed the max url length, dispatch the url to Google Maps
+            # Elevation API
             result = urlfetch.fetch(url=url, headers={"Content-Type":"application/json"})
             result_dict = json.loads(result.content)
             if result_dict['status'] != 'OK':
@@ -37,13 +42,18 @@ def get_multi_elevations(location_list):
             for item in result_dict['results']:
                 waypoint = (item['location']['lat'], item['location']['lng'], item['elevation'])
                 waypoint_list.append(waypoint)
-            location_str = "%f,%f" % (lat, lng)
+            # Reset the process to make another batch call
+            location_str = "%f,%f" % (lat, lng) 
             url = URL + location_str
             url_len = len(URL)
             first_location = False
 
     if url_len > len(URL):
-        # still need to make one more call
+        # There are often some lat lng pairs left over because
+        # the amount of pairs passed in does not divide evenly into the batch calls
+        # (e.g. if each batch call takes 100 lat lng pairs and 101 pairs
+        # are passed in, the last lat lng pair is left over).  In this case,
+        # one more batch call needs to be made to get the left over pairs.
         result = urlfetch.fetch(url=url, headers={"Content-Type":"application/json"})
         result_dict = json.loads(result.content)
         if result_dict['status'] != 'OK':
