@@ -89,6 +89,11 @@
         map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
 
         if (DRONE_NAME == 'DEMO') {
+
+          // create the search box and link it to the UI element.
+          var input = /** @type {HTMLInputElement} */(
+              document.getElementById('pac-input'));
+          map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
           
           firstClickHandler(53.1667, -119.4379)
 
